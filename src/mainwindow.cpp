@@ -173,7 +173,7 @@ void MainWindow::browseOutputT2()
 
 void MainWindow::browseOutputExcel()
 {
-	saveFile(_stroutputexcel);
+	saveCsvFile(_stroutputexcel);
 	_editOutputExcel->setText(_stroutputexcel);
 }
 

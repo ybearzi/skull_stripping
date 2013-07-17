@@ -37,23 +37,41 @@ typedef itk::ImageRegionIterator< ImageBinary > IteratorBinary;
 typedef itk::BinaryBallStructuringElement<PixelBinaryType, Dim> StructuringElementBinary;
 typedef itk::BinaryMorphologicalClosingImageFilter< ImageBinary, ImageBinary, StructuringElementBinary > ClosingFilterBinary;
 
+/**
+ * Main function to process skull stripping
+ * @brief 
+ */
+
 void strip(const char *input_t1, const char *input_t2, const char *input_label, const char *output_t1, const char *output_t2, const char *output_excel)
 {
 	// Reading files
+	std::cout<<"Reading files"<<std::endl;
 
 	Reader::Pointer reader_t1 = Reader::New(), reader_t2 = Reader::New(), reader_label = Reader::New();
-	reader_t1->SetFileName(input_t1);
-	reader_t2->SetFileName(input_t2);
-	reader_label->SetFileName(input_label);
-	reader_t1->Update(); reader_t2->Update(); reader_label->Update();
+		reader_t1->SetFileName(input_t1);
+		reader_t2->SetFileName(input_t2);
+		reader_label->SetFileName(input_label);
+	try
+	{
+		reader_t1->Update(); reader_t2->Update(); reader_label->Update();
+	}
+	catch(itk::ExceptionObject & err)
+	{
+		std::cout<<"Error reading files. Update failed"<<std::endl;
+		std::cout<<err<<std::endl;
+		return;
+	}
 
 	// Making Images
+	std::cout<<"Making Images"<<std::endl;
 
-	Image::Pointer image_t1 = reader_t1->GetOutput();
-	Image::Pointer image_t2 = reader_t2->GetOutput();
-	Image::Pointer image_label = reader_label->GetOutput();
+	Image::Pointer image_t1, image_t2, image_label;
+	image_t1 = reader_t1->GetOutput();
+	image_t2 = reader_t2->GetOutput();
+	image_label = reader_label->GetOutput();
 
 	// Making a binary mask from label image
+	std::cout<<"Making binary mask from label image"<<std::endl;
 	
 	ImageBinary::Pointer mask = label2mask(image_label);
 
@@ -63,18 +81,22 @@ void strip(const char *input_t1, const char *input_t2, const char *input_label, 
 	writer_mask_before->Update();
 
 	// Closing mask because of holes between labels
+	std::cout<<"Closing filter"<<std::endl;
 	
 	mask = close(mask);
 	
+	std::cout<<"Filling csv file with statistics"<<std::endl;
 	fill_csv(image_t1, image_t2, image_label, output_excel);
 
 	// Skull stripping
+	std::cout<<"Processing skull stripping"<<std::endl;
 
 	Image::Pointer image_output_t1 = binary_and(image_t1, mask);
 	Image::Pointer image_output_t2 = binary_and(image_t2, mask);
 
 	// Writting 2 files
 
+	std::cout<<"Writting outputs"<<std::endl;
 	Writer::Pointer writer_t1 = Writer::New();
 	writer_t1->SetFileName(output_t1);
 	writer_t1->SetInput(image_output_t1);
@@ -125,7 +147,7 @@ ImageBinary::Pointer label2mask(Image::Pointer label, unsigned int element)
 
 ImageBinary::Pointer close(ImageBinary::Pointer image_binary)
 {
-	// Initialising filters
+	// Initialising filter
 	
 	ClosingFilterBinary::Pointer filter = ClosingFilterBinary::New();
 
@@ -154,7 +176,17 @@ Image::Pointer binary_and(Image::Pointer input, ImageBinary::Pointer mask)
 	Image::Pointer output = Image::New();
 	Image::RegionType region = input->GetLargestPossibleRegion();
 	output->SetRegions(region);
-	output->Allocate();
+
+	try
+	{
+		output->Allocate();
+	}
+	catch(itk::ExceptionObject & err)
+	{
+		std::cout<<"Error in binary_and. Allocation failed"<<std::endl;
+		std::cout<<err<<std::endl;
+		return NULL;
+	}
 
 	ConstIteratorBinary iterator_mask(mask, mask->GetLargestPossibleRegion());
 	Iterator iterator_input(input, input->GetLargestPossibleRegion());
@@ -175,7 +207,7 @@ Image::Pointer binary_and(Image::Pointer input, ImageBinary::Pointer mask)
 	}
 	catch(itk::ExceptionObject & err)
 	{
-		std::cout<<"Error in binary process, images might not be the same size"<<std::endl;
+		std::cout<<"Iterator error"<<std::endl;
 		std::cout<<err<<std::endl;
 	}
 	
@@ -205,6 +237,7 @@ void fill_csv(Image::Pointer im1, Image::Pointer im2, Image::Pointer label, cons
 	csv.insert(6,6,QString("Max"));
 	
 	// White Matter
+	std::cout<<"White Matter statistics"<<std::endl;
 
 	Image::Pointer wm1 = binary_and(im1, label2mask(label,1));
 	unsigned int min = get_min(wm1);
@@ -229,6 +262,7 @@ void fill_csv(Image::Pointer im1, Image::Pointer im2, Image::Pointer label, cons
 	csv.insert(7,6,QString("%1").arg(max));
 
 	// Gray Matter
+	std::cout<<"Gray Matter statistics"<<std::endl;
 	
 	Image::Pointer gm1 = binary_and(im1, label2mask(label,2));
 	min = get_min(gm1);
@@ -253,6 +287,7 @@ void fill_csv(Image::Pointer im1, Image::Pointer im2, Image::Pointer label, cons
 	csv.insert(8,6,QString("%1").arg(max));
 
 	// CSF
+	std::cout<<"CSF statistics"<<std::endl;
 	
 	Image::Pointer csf1 = binary_and(im1, label2mask(label,3));
 	min = get_min(csf1);
@@ -276,12 +311,15 @@ void fill_csv(Image::Pointer im1, Image::Pointer im2, Image::Pointer label, cons
 	csv.insert(9,5,QString("%1").arg(min));
 	csv.insert(9,6,QString("%1").arg(max));
 
+	std::cout<<"Updating cvs file"<<std::endl;
 	csv.update();
+	std::cout<<"cvs file updated"<<std::endl;
 }
 
 unsigned int get_min(Image::Pointer im)
 {
-	ConstIterator it(im, im->GetLargestPossibleRegion());
+	ConstIterator it;
+	it = ConstIterator(im, im->GetLargestPossibleRegion());
 	
 	unsigned int min = ~0;
 
@@ -296,7 +334,7 @@ unsigned int get_min(Image::Pointer im)
 	}
 	catch( itk::ExceptionObject & err)
 	{
-		std::cout<<"Error calculating minimum, out of bounds"<<std::endl;
+		std::cout<<"Error calculating minimum, iterator error"<<std::endl;
 		std::cout<<err<<std::endl;
 	}
 
@@ -305,7 +343,8 @@ unsigned int get_min(Image::Pointer im)
 
 unsigned int get_max(Image::Pointer im)
 {
-	ConstIterator it(im, im->GetLargestPossibleRegion());
+	ConstIterator it;
+	it = ConstIterator(im, im->GetLargestPossibleRegion());
 	
 	unsigned int max = 0;
 
@@ -320,7 +359,7 @@ unsigned int get_max(Image::Pointer im)
 	}
 	catch( itk::ExceptionObject & err)
 	{
-		std::cout<<"Error calculating maximum, out of bounds"<<std::endl;
+		std::cout<<"Error calculating maximum, iterator error"<<std::endl;
 		std::cout<<err<<std::endl;
 	}
 
@@ -329,7 +368,8 @@ unsigned int get_max(Image::Pointer im)
 
 float get_mean(Image::Pointer im)
 {
-	ConstIterator it(im, im->GetLargestPossibleRegion());
+	ConstIterator it;
+	it = ConstIterator(im, im->GetLargestPossibleRegion());
 	
 	float mean = 0, N=0;
 
@@ -347,7 +387,7 @@ float get_mean(Image::Pointer im)
 	}
 	catch( itk::ExceptionObject & err)
 	{
-		std::cout<<"Error calculating mean, out of bounds"<<std::endl;
+		std::cout<<"Error calculating mean, iterator error"<<std::endl;
 		std::cout<<err<<std::endl;
 	}
 
@@ -356,7 +396,8 @@ float get_mean(Image::Pointer im)
 
 unsigned int get_volume(Image::Pointer im)
 {
-	ConstIterator it(im, im->GetLargestPossibleRegion());
+	ConstIterator it;
+	it = ConstIterator(im, im->GetLargestPossibleRegion());
 	
 	unsigned int volume;
 
@@ -371,7 +412,7 @@ unsigned int get_volume(Image::Pointer im)
 	}
 	catch( itk::ExceptionObject & err)
 	{
-		std::cout<<"Error calculating volume, out of bounds"<<std::endl;
+		std::cout<<"Error calculating volume, iterator error"<<std::endl;
 		std::cout<<err<<std::endl;
 	}
 
